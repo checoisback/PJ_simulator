@@ -7,7 +7,7 @@ addpath(genpath(fullfile('T1D_VPP', 'Single Hormone Population')));
 nPats = 99;
 rng(42)
 seeds = randi([0, 1000], 99, 1);
-samples = 288*2;
+samples = 30*288;
 
 bolusModulations = 0.5:0.1:1.5;
 basalModulations = 0.5:0.1:1.5;
@@ -181,69 +181,3 @@ end
 
 
 
-function saveResults(glucose, bolus, basal, meal, iob, weights, crs, cfs, gts, label)
-
-    saveFolderName = fullfile('results', label);
-    if ~exist(saveFolderName, 'dir')
-        mkdir(saveFolderName)
-    end
-    
-    % Cut
-    startSample = 1;
-    endSample = (11 + (24-6)) * 12;
-    glucoseAll = glucose(startSample:endSample,:);
-    basalAll = basal(startSample:endSample,:);
-    bolusAll = bolus(startSample:endSample,:);
-    mealAll = meal(startSample:endSample,:);
-    iobAll = iob(startSample:endSample,:);
-    
-    for p = 1:size(glucose,2)
-
-        t = datetime(2000,1,1,6,0,0):minutes(5):(datetime(2000,1,1,6,0,0)+minutes(5*size(glucoseAll,1)));
-        t = t(1:end-1)';
-
-        glucose = glucoseAll(:,p);
-        glucose(glucose<0) = 10^(-5); 
-        cho = mealAll(:,p);
-        bolus = bolusAll(:,p);
-        basal = basalAll(:,p);
-        iob = iobAll(:,p);
-
-        cho_label = strings(length(cho),1);
-        bolus_label = strings(length(cho),1);
-        idxs_cho = find(cho ~= 0);
-        idxs_bolus = find(bolus ~= 0);
-        if ~isempty(idxs_cho)
-            if length(idxs_cho)==7
-                cho_label(idxs_cho([1, 6])) = "B";
-                cho_label(idxs_cho([2, 4, 7])) = "S";
-                cho_label(idxs_cho([3])) = "L";
-                cho_label(idxs_cho([5])) = "D";
-
-            else
-                cho_label(idxs_cho([1, 7])) = "B";
-                cho_label(idxs_cho([2, 5, 8])) = "S";
-                cho_label(idxs_cho([3])) = "L";
-                cho_label(idxs_cho([6])) = "D";
-                cho_label(idxs_cho([4])) = "added S";
-            end
-
-            for k = 1:length(idxs_bolus)
-                [~, idx_min] = min(abs(idxs_cho - idxs_bolus(k)));  % closest CHO index
-                bolus_label(idxs_bolus(k)) = cho_label(idxs_cho(idx_min));
-            end
-        end
-
-        data = table(t,glucose,bolus,bolus_label,basal,cho,cho_label,iob);
-
-        writetable(data, fullfile(saveFolderName,['patient_' num2str(p) '.csv']));
-
-    end
-
-    patient = (1:99)';
-    bw = weights;
-    
-    data = table(patient, weights, crs, cfs, gts);
-    writetable(data, fullfile(saveFolderName,['patInfo.csv']));
-    
-end

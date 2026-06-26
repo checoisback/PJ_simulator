@@ -11,75 +11,69 @@ function [G, CHO, IB, Ib, BW, ICR, CF, GT] = runSimulation(nn,bolusInput_flag,bo
 %% loading the VPP
 load('SingleHormone_VPP.mat'); 
 
-Ts = 5;                          % Ts: sampling interval every 5 minutes (min);
-Days_Sim = 2;                    % Number of simulation Days
-Sim_time = Days_Sim*1440/Ts;     % simulation time (sample) 
-% nn = 2;                          % ID of the virtual subject
+Ts       = 5;
+Days_Sim = 30;
+Sim_time = Days_Sim * 1440 / Ts;   % 8640 samples
+samples_per_day = 1440 / Ts;       % 288
 
-%% loading the model parameters of the selected virtual patient 
-ModPar(1) = YmSbjt(1,nn);        % Fc01: Non-insulin mediated glucose uptake above 4.5 mmol/L ([mmol/kg]/min);
-ModPar(2) = YmSbjt(2,nn);        % Vdg: Volume of distribution of glucose (L/kg)
-ModPar(3) = YmSbjt(3,nn);        % k12: Rate constant for glucose transfer from Q2 to Q1 (min^-1)
-ModPar(4) = YmSbjt(4,nn);        % Ag: Carb bioavailability (unitless);
-ModPar(5) = YmSbjt(5,nn);        % tmaxG: time-to-maximum of carb absorption (min);
-ModPar(6) = YmSbjt(6,nn);        % EGP0: Endogenous glucose production maximum ([mmol/kg]/min)
-ModPar(7) = YmSbjt(7,nn);        % tmaxI: time-to-maximum of rapid-acting insulin absorption        
-ModPar(8) = YmSbjt(8,nn);        % Ke: Elimination rate of insulin (min^-1)    
-ModPar(9) = YmSbjt(9,nn);        % VdI: Volume of distribution of insulin (L/kg)  
-ModPar(10) = YmSbjt(10,nn);      % ka1: Rate constant for elimination of insulin effect from x1 (min^-1) 
-ModPar(11) = YmSbjt(11,nn);      % ka2: Rate constant for elimination of insulin effect from x2 (min^-1)
-ModPar(12) = YmSbjt(12,nn);      % ka3: Rate constant for elimination of insulin effect from x3 (min^-1) 
-ModPar(13) = YmSbjt(13,nn);      % Sf1: Sensitivity factor for glucose distribution (x1) ([mU.L.min]^-2)
-ModPar(14) = YmSbjt(14,nn);      % Sf2: Sensitivity factor for insulin mediated glucose utilization (x2) ([mU.L.min]^-2) 
-ModPar(15) = YmSbjt(15,nn);      % Sf3: Sensitivity factor for suppression of endogenous glucose production (x3) ([mU.L.min]^-1)
-ModPar(16) = Weights(1,nn);      % Weight of the virtual subject (kg); 
-Weight = ModPar(16);
+%% Load model parameters
+ModPar(1)  = YmSbjt(1,nn);   % Fc01
+ModPar(2)  = YmSbjt(2,nn);   % Vdg
+ModPar(3)  = YmSbjt(3,nn);   % k12
+ModPar(4)  = YmSbjt(4,nn);   % Ag
+ModPar(5)  = YmSbjt(5,nn);   % tmaxG
+ModPar(6)  = YmSbjt(6,nn);   % EGP0
+ModPar(7)  = YmSbjt(7,nn);   % tmaxI
+ModPar(8)  = YmSbjt(8,nn);   % Ke
+ModPar(9)  = YmSbjt(9,nn);   % VdI
+ModPar(10) = YmSbjt(10,nn);  % ka1
+ModPar(11) = YmSbjt(11,nn);  % ka2
+ModPar(12) = YmSbjt(12,nn);  % ka3
+ModPar(13) = YmSbjt(13,nn);  % Sf1
+ModPar(14) = YmSbjt(14,nn);  % Sf2
+ModPar(15) = YmSbjt(15,nn);  % Sf3
+ModPar(16) = Weights(1,nn);  % Weight (kg)
+Weight     = ModPar(16);
 
-%% Select a sample meal scenario
-time_B  = 0.5*12  : 2.5*12;      % 6:30–8:30
-time_S1 = 3.5*12  : 5.5*12;      % 9:30–11:30
-time_L  = 6.5*12  : 8.5*12;      % 12:30–14:30
-time_S2 = 10.5*12 : 11.5*12;     % 16:30–17:30
-time_D  = 13.5*12 : 15.5*12;     % 19:30–21:30
+%% Build 30-day meal scenario
+% Timing windows — identical to your day-1 definition, relative to each day's midnight
+time_B  = 0.5*12  : 2.5*12;    % 06:30–08:30
+time_S1 = 3.5*12  : 5.5*12;    % 09:30–11:30
+time_L  = 6.5*12  : 8.5*12;    % 12:30–14:30
+time_S2 = 10.5*12 : 11.5*12;   % 16:30–17:30
+time_D  = 13.5*12 : 15.5*12;   % 19:30–21:30
 
-time_2B = 24*12 + 1;
-time_2S = 24*12 + (3.5*12  : 5*12);       % next day
+% Amount ranges — identical to your original
+amount_B  = 50:5:90;
+amount_S1 = 20:5:30;
+amount_L  = 60:5:100;
+amount_S2 = 20:5:30;
+amount_D  = 60:5:90;
 
 rng(pat_seed);
-Scenario(:,1) = [
-    datasample(time_B,1)
-    datasample(time_S1,1)
-    datasample(time_L,1)
-    datasample(time_S2,1)
-    datasample(time_D,1)
-    datasample(time_2B,1)
-    datasample(time_2S,1)
-];
 
-amount_B  = 50:5:90;      % g
-amount_S1 = 20:5:30;      % g
-amount_L  = 60:5:100;     % g
-amount_S2 = 20:5:30;      % g
-amount_D  = 60:5:90;      % g
+Meal_Vector = zeros(1, Sim_time);
 
-amount_2B = 50:5:90;      % g
-amount_2S = 20:5:30;      % g
+for d = 0 : Days_Sim - 1
 
-Scenario(:,2) = [
-    datasample(amount_B,1)
-    datasample(amount_S1,1)
-    datasample(amount_L,1)
-    datasample(amount_S2,1)
-    datasample(amount_D,1)
-    datasample(amount_2B,1)
-    datasample(amount_2S,1)
-];
+    offset = d * samples_per_day;   % shift to absolute sample index
 
-Time_Meal = round(Scenario(:,1)); 
-Amt_Meal = Scenario(:,2);
-Meal_Vector = zeros(1,Sim_time); 
-Meal_Vector(Time_Meal) = Amt_Meal;
-meal_time= []; meal_Amount = [];
+    Scenario_d = [
+        datasample(time_B,  1) + offset,  datasample(amount_B,  1);
+        datasample(time_S1, 1) + offset,  datasample(amount_S1, 1);
+        datasample(time_L,  1) + offset,  datasample(amount_L,  1);
+        datasample(time_S2, 1) + offset,  datasample(amount_S2, 1);
+        datasample(time_D,  1) + offset,  datasample(amount_D,  1);
+    ];
+
+    Time_Meal = round(Scenario_d(:,1));
+    Amt_Meal  = Scenario_d(:,2);
+    Meal_Vector(Time_Meal) = Amt_Meal;
+
+end
+
+meal_time   = [];
+meal_Amount = [];
 
 %% Bolus calculations
 ICR = (500/TDIRlist(1,nn));                                                 % ICR: Insulin to Carb Ratio
